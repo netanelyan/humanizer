@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanizer"
+version = "0.1.0"
+description = "Rewrite text so it reads like a person typed it, in place and without touching .docx formatting."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+humanize = "humanizer.cli:main"
+humanize-web = "humanizer.web:main"
+
+[tool.setuptools]
+packages = ["humanizer"]
+
+[tool.setuptools.package-data]
+humanizer = ["webui/*.html", "webui/*.css", "webui/*.js"]

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>humanizer</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>✍</text></svg>">
+</head>
+<body>
+
+<header class="bar">
+  <h1>humanizer</h1>
+  <div class="bar-actions">
+    <span class="hint" id="status">ready</span>
+    <button type="button" id="theme" class="ghost" title="Light / dark">◐</button>
+  </div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------ controls -->
+  <section class="controls">
+    <div class="slider-block">
+      <div class="slider-head">
+        <label for="level">Level</label>
+        <output id="level-value">5</output>
+      </div>
+      <input type="range" id="level" min="0" max="10" step="1" value="5">
+      <div class="ticks">
+        <span>off</span><span>light</span><span>medium</span><span>strong</span><span>max</span>
+      </div>
+      <p class="caption" id="level-caption"></p>
+    </div>
+
+    <div class="slider-block">
+      <div class="slider-head">
+        <label for="typos">Typos</label>
+        <output id="typos-value">auto</output>
+      </div>
+      <input type="range" id="typos" min="-1" max="30" step="1" value="-1">
+      <div class="ticks">
+        <span>auto</span><span>none</span><span>a few</span><span>lots</span>
+      </div>
+      <p class="caption">Slips per 1000 words. <em>auto</em> follows the level.</p>
+    </div>
+
+    <details class="switches">
+      <summary>What to change <span class="chev">›</span></summary>
+      <div class="switch-grid">
+        <label><input type="checkbox" data-setting="em_dashes" checked> Remove em dashes</label>
+        <label><input type="checkbox" data-setting="hyphens" checked> Loosen hyphens</label>
+        <label><input type="checkbox" data-setting="lexical" checked> Reword</label>
+        <label><input type="checkbox" data-setting="contractions" checked> Contractions</label>
+        <label><input type="checkbox" data-setting="seasoning" checked> Hedges &amp; openers</label>
+        <label><input type="checkbox" data-setting="typos" checked> Typos</label>
+        <label><input type="checkbox" data-setting="quotes" checked> Straighten quotes</label>
+        <label><input type="checkbox" data-setting="semicolons" checked> Split semicolons</label>
+        <label><input type="checkbox" data-setting="protect_first_sentence" checked> Spare first sentence</label>
+      </div>
+      <div class="seed-row">
+        <label for="seed">Seed</label>
+        <input type="number" id="seed" min="0" step="1" placeholder="random">
+        <button type="button" id="reroll" class="ghost">Re-roll</button>
+      </div>
+      <div class="preserve-row">
+        <label for="preserve">Never touch</label>
+        <input type="text" id="preserve" placeholder="regex, one per line or comma separated">
+      </div>
+    </details>
+  </section>
+
+  <!-- ------------------------------------------------ panes -->
+  <section class="panes">
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Your text</h2>
+        <div class="pane-tools">
+          <span class="count" id="in-count">0 words</span>
+          <button type="button" id="clear" class="ghost">Clear</button>
+          <button type="button" id="sample" class="ghost">Sample</button>
+        </div>
+      </div>
+      <textarea id="input" spellcheck="false" placeholder="Paste your text here, or drop a .txt, .md or .docx file anywhere on the page."></textarea>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Humanized</h2>
+        <div class="pane-tools">
+          <label class="toggle"><input type="checkbox" id="highlight" checked> Highlight</label>
+          <button type="button" id="copy" class="ghost">Copy</button>
+          <button type="button" id="download" class="ghost">Save</button>
+        </div>
+      </div>
+      <div id="output" class="output" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------ stats -->
+  <section class="stats" id="stats" hidden>
+    <div class="stats-head">
+      <strong id="stats-total">0 edits</strong>
+      <span class="hint" id="stats-words"></span>
+    </div>
+    <ul class="chips" id="stats-list"></ul>
+  </section>
+
+  <!-- ------------------------------------------------ docx -->
+  <section class="docx" id="docx" hidden>
+    <div class="docx-head">
+      <div>
+        <strong id="docx-name">document.docx</strong>
+        <span class="hint" id="docx-summary"></span>
+      </div>
+      <div class="pane-tools">
+        <button type="button" id="docx-run">Humanize document</button>
+        <button type="button" id="docx-drop-file" class="ghost">Remove</button>
+      </div>
+    </div>
+    <p class="caption">Formatting is preserved exactly: styles, bold runs, tables,
+      headers, hyperlinks and images all come through untouched.</p>
+    <div id="docx-changes" class="docx-changes"></div>
+  </section>
+</main>
+
+<div id="drop" class="drop" hidden><div>Drop the file</div></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
