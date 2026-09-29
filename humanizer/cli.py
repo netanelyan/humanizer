@@ -128,6 +128,11 @@ _LABELS = {
     "typo:dropped_comma": "dropped commas",
     "typo:shift_held": "shift held too long",
     "typo:homophone": "homophone slips",
+    "typo:he_final_form": "final letters not final",
+    "typo:he_key_slip": "Hebrew keyboard slips",
+    "typo:he_ktiv": "dropped vav or yod",
+    "typo:he_alef_he": "alef/he endings",
+    "typo:he_prefix_split": "split prefixes",
 }
 
 

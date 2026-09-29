@@ -306,6 +306,11 @@ textarea, .output {
   overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
+  /* Each paragraph takes its direction from its own first strong character,
+     so Hebrew reads right to left and a mixed document gets both, per line,
+     without a language switch. */
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 textarea { resize: none; }
 textarea:focus { outline: none; }

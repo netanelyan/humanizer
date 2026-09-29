@@ -26,7 +26,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from . import lexicon
+from . import lexicon, lexicon_he
+from .typos import HEBREW_LETTERS, TypoEngine, is_hebrew
 
 APOSTROPHES = "'’ʼ"
 
@@ -280,6 +281,21 @@ def _key_pattern(key: str) -> str:
 
 _WS_RE = re.compile(r"\s+")
 
+# Hebrew attaches ‏ו ה ב ל כ מ ש‎ directly to the word that follows, with no
+# space. A replacement that ends in one of them has to close up against the
+# next word or you get ‏אפשר לומר ש מדובר‎, which no one writes.
+_HE_CLITICS = "ושבלכמה"
+_HE_CLITIC_END_RE = re.compile("(?:^|\\s)([" + _HE_CLITICS + "]{1,2})$")
+# Two-letter sequences drawn from those same letters that are words in their
+# own right, and so stay detached.
+_HE_CLITIC_WORDS = frozenset(
+    "לו לה לי מה מי בו בה כה שב של כל הם הן שו מו הו וו".split())
+
+
+def _ends_with_clitic(text: str) -> bool:
+    match = _HE_CLITIC_END_RE.search(text)
+    return bool(match) and match.group(1) not in _HE_CLITIC_WORDS
+
 
 def _normkey(matched: str) -> str:
     text = _WS_RE.sub(" ", matched.strip()).lower()
@@ -332,7 +348,8 @@ def _blocked(spans: Sequence[Tuple[int, int]], start: int, end: int) -> bool:
     return False
 
 
-SENTENCE_START_RE = re.compile(r"(?:^|(?<=[.!?][\"'”’)\]])\s+|(?<=[.!?])\s+)(?=[A-Za-z])")
+SENTENCE_START_RE = re.compile(
+    r"(?:^|(?<=[.!?][\"'”’)\]])\s+|(?<=[.!?])\s+)(?=[^\W\d_])", re.UNICODE)
 
 
 def sentence_starts(text: str) -> List[int]:
@@ -361,26 +378,42 @@ class Humanizer:
                 setattr(self.settings, key, value)
         self._rng = random.Random(self.settings.seed)
         self._table, self._regex = self._build_table()
-        from .typos import TypoEngine   # imported here: typos.py needs Edit from us
         self._typos = TypoEngine(self._rng)
         self._last_opener = ""
+        self._recent: List[str] = []   # spans paragraphs; .docx plans each alone
         self.stats: Dict[str, int] = {}
 
     # -- table ----------------------------------------------------------
 
     def _build_table(self):
+        """Both languages go in one table.
+
+        Hebrew and Latin keys cannot collide — the scripts share no letters —
+        so there is no language to detect and a document that mixes the two
+        gets each phrase handled by the rules for its own script.
+        """
         settings = self.settings
         level = settings.clamped_level()
         table: Dict[str, Tuple[List[str], str]] = {}
 
+        def add(key, options, kind, overwrite=True):
+            # An option identical to the key would be a no-op edit; drop it
+            # rather than let it burn a probability roll.
+            choices = [o for o in options if o != key]
+            if not choices:
+                return
+            if overwrite or key not in table:
+                table[key] = (choices, kind)
+
         if settings.lexical:
-            for key, options in lexicon.phrases_for_level(level).items():
-                table[key] = (list(options), "phrase")
-            for key, options in lexicon.words_for_level(level).items():
-                table.setdefault(key, (list(options), "word"))
+            for source in (lexicon, lexicon_he):
+                for key, options in source.phrases_for_level(level).items():
+                    add(key, options, "phrase")
+                for key, options in source.words_for_level(level).items():
+                    add(key, options, "word", overwrite=False)
         if settings.contractions and level >= 2:
             for key, value in lexicon.CONTRACTIONS.items():
-                table[key] = ([value], "contraction")
+                add(key, [value], "contraction")
 
         if not table:
             return table, None
@@ -425,6 +458,7 @@ class Humanizer:
     # instead of a comma, which would leave a splice.
     _CLAUSE_STARTERS = frozenset(
         "the it this that they we you there these those he she i and but".split()
+        + "זה זו זאת הם הן הוא היא אני אנחנו אתה יש אין כל וזה אבל וגם".split()
     )
 
     def _dash_edits(self, text: str, spans) -> List[Edit]:
@@ -483,7 +517,7 @@ class Humanizer:
                 edits.append(Edit(start, end, new, "dash", whole))
                 continue
 
-            word = re.match(r"([A-Za-z']+)", after)
+            word = re.match(r"([A-Za-z']+|[" + HEBREW_LETTERS + r"]+)", after)
             clause = bool(word) and word.group(1).lower() in self._CLAUSE_STARTERS
             roll = self._rng.random()
             if clause and roll < 0.70 and after[:1].isalpha():
@@ -524,8 +558,13 @@ class Humanizer:
             # Prefer a different wording than last time this key came up, so a
             # repeated word does not get the same substitute every paragraph.
             choices = [o for o in options if o != used.get(key)] or options
-            replacement = self._rng.choice(choices)
+            # And avoid whatever was used very recently for *any* key, or two
+            # different phrases both land on "in short" in adjacent sentences.
+            fresh = [o for o in choices if o not in self._recent] or choices
+            replacement = self._rng.choice(fresh)
             used[key] = replacement
+            self._recent.append(replacement)
+            del self._recent[:-6]
 
             if not replacement:
                 edit = self._deletion(text, start, end, starts, kind)
@@ -533,7 +572,10 @@ class Humanizer:
                 new = _match_case(match.group(0), replacement)
                 if new == match.group(0) or self._doubles_a_word(text, end, new):
                     continue
-                edit = Edit(start, end, new, kind, match.group(0))
+                stop = end
+                if _ends_with_clitic(new) and text[end:end + 1] == " ":
+                    stop += 1      # ‏... ש‎ + ‏מדובר‎ -> ‏... שמדובר‎
+                edit = Edit(start, stop, new, kind, text[start:stop])
             if edit is not None:
                 edits.append(edit)
         return dedupe(edits)
@@ -577,12 +619,26 @@ class Humanizer:
         split_p = _p(0.04, 0.030, level, 0.34)
         join_p = _p(0.25, 0.045, level, 0.70)
         edits: List[Edit] = []
-        for match in re.finditer(r"\b([A-Za-z]{1,20})-([A-Za-z]{2,20})\b", text):
+        # Hebrew joins compounds with a maqaf as well as a plain hyphen, and
+        # loosening those reads exactly the same way: ‏בית-ספר‎ -> ‏בית ספר‎.
+        pattern = (r"\b([A-Za-z]{1,20})-([A-Za-z]{2,20})\b"
+                   r"|([" + HEBREW_LETTERS + r"]{2,20})[-־]([" + HEBREW_LETTERS + r"]{2,20})")
+        for match in re.finditer(pattern, text):
             start, end = match.span()
             if _blocked(spans, start, end):
                 continue
             whole = match.group(0)
             lowered = whole.lower()
+
+            if match.group(3):     # Hebrew: no prefix closing, always a space
+                if lowered in lexicon_he.HYPHEN_KEEP:
+                    continue
+                if self._rng.random() < split_p:
+                    edits.append(Edit(start, end,
+                                      match.group(3) + " " + match.group(4),
+                                      "hyphen", whole))
+                continue
+
             # "check-ins" is the same compound as "check-in"
             singular = lowered[:-1] if lowered.endswith("s") else None
             if lowered in lexicon.HYPHEN_KEEP or singular in lexicon.HYPHEN_KEEP:
@@ -624,40 +680,52 @@ class Humanizer:
                 continue              # keep them scattered, not every sentence
             if _blocked(spans, position, position + 1):
                 continue
-            head = text[position:position + 40].lower()
-            if head.startswith(lexicon.CONNECTIVE_STARTS):
-                continue              # already has an opener, do not stack one
             stop = starts[index + 1] if index + 1 < len(starts) else len(text)
-            if len(text[position:stop].split()) < 6:
+            sentence = text[position:stop]
+            hebrew = is_hebrew(sentence[:60])
+            source = lexicon_he if hebrew else lexicon
+
+            head = sentence[:40].lower()
+            if head.startswith(source.CONNECTIVE_STARTS):
+                continue              # already has an opener, do not stack one
+            if len(sentence.split()) < 6:
                 continue              # this sentence is too short to carry one
             if self._rng.random() >= opener_p:
                 continue
-            match = re.match(r"[A-Za-z]+", text[position:])
+            match = re.match(r"[A-Za-z]+|[" + HEBREW_LETTERS + r"]+", sentence)
             if not match:
                 continue
             first = match.group(0)
-            if first == "I" or (len(first) > 1 and first[1].isupper()):
+            if not hebrew and (first == "I" or (len(first) > 1 and first[1].isupper())):
                 continue              # "I", acronyms and proper nouns keep their case
             # kept on the instance so the same opener does not turn up again in
             # the next paragraph of a .docx, which is planned separately
-            choices = [o for o in lexicon.OPENERS if o != self._last_opener]
+            choices = [o for o in source.OPENERS if o != self._last_opener]
             opener = self._rng.choice(choices)
             self._last_opener = opener
-            new = opener + first[0].lower() + first[1:]
+            # Hebrew has no capitals, so there is nothing to fold down
+            new = opener + (first if hebrew else first[0].lower() + first[1:])
             edits.append(Edit(position, position + len(first), new, "opener", first))
             last_opener = index
 
-        for match in re.finditer(r"\b(?:is|are|was|were|seems?|looks?|feels?)\s+([a-z]{4,})\b", text):
-            start, end = match.span(1)
-            if _blocked(spans, start, end):
-                continue
-            # "are honestly primarily carried out" — one qualifier is enough
-            if match.group(1).endswith("ly"):
-                continue
-            if self._rng.random() >= hedge_p:
-                continue
-            hedge = self._rng.choice(lexicon.HEDGES)
-            edits.append(Edit(start, start, hedge + " ", "hedge", ""))
+        english = r"\b(?:is|are|was|were|seems?|looks?|feels?)\s+([a-z]{4,})\b"
+        # Hebrew has no copula, so the slot is after the pronoun instead:
+        # ‏זה חשוב‎ -> ‏זה די חשוב‎
+        hebrew = (r"\b(?:הוא|היא|זה|זו|הם|הן|היה|הייתה)\s+"
+                  r"([" + HEBREW_LETTERS + r"]{4,})\b")
+        for pattern in (english, hebrew):
+            for match in re.finditer(pattern, text):
+                start, end = match.span(1)
+                if _blocked(spans, start, end):
+                    continue
+                # "are honestly primarily carried out" — one qualifier is enough
+                if match.group(1).endswith("ly"):
+                    continue
+                if self._rng.random() >= hedge_p:
+                    continue
+                source = lexicon_he if is_hebrew(match.group(1)) else lexicon
+                hedge = self._rng.choice(source.HEDGES)
+                edits.append(Edit(start, start, hedge + " ", "hedge", ""))
 
         return dedupe(edits)
 
