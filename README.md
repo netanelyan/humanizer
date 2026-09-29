@@ -4,8 +4,9 @@ Rewrites text so it reads like a person typed it rather than a model generated i
 It de-bloats the wording, strips the punctuation habits that give models away, and
 leaves behind the small mistakes real typing has.
 
-It edits `.docx` in place **without touching the formatting** — styles, bold runs,
-tables, headers, hyperlinks, images and tracked changes all come through unchanged.
+It handles **English and Hebrew**, and edits `.docx` in place **without touching the
+formatting** — styles, bold runs, tables, headers, hyperlinks, images and tracked
+changes all come through unchanged.
 
 No dependencies. Python 3.8+. There is a command line and a local web UI.
 
@@ -91,6 +92,60 @@ default because that is the part people reread:
 
 Frequency follows the level, or set it yourself with `--typos N` (slips per 1000
 words). `--typos 0` or `--no-typos` turns them off entirely.
+
+## Hebrew
+
+Hebrew works the same way, at the same levels, through the same commands. There is
+no language flag: Hebrew and Latin share no letters, so both rule sets live in one
+table and each phrase is handled by the rules for its own script. A document that
+mixes the two gets both, per paragraph.
+
+```
+py -m humanizer מסמך.docx -i -l 6
+```
+
+The formal register is the tell, so that is what moves:
+
+| | |
+|---|---|
+| `יש לציין כי` | `צריך להגיד ש` |
+| `על מנת` | `כדי` |
+| `הינו` | `הוא` |
+| `מגוון רחב של` | `המון` |
+| `באופן משמעותי` | `הרבה` |
+| `ניתן לומר כי` | `אפשר לומר ש` |
+| `אשר` | `ש` |
+| `לסיכום,` | `בקיצור,` |
+
+The typos are Hebrew ones. English has no equivalent for most of them, and Hebrew
+has no capitalisation, so three of the English kinds disappear entirely:
+
+- a final letter typed in its ordinary form — `שלום` → `שלומ`
+- a `ו` or `י` dropped out of a full spelling — `אופן` → `אפן`
+- a neighbouring key on the **Hebrew** layout — `כלים` → `כליף`
+- `א` and `ה` swapped at the end of a word — `לקרוא` → `לקרוה`
+- a prefix left floating — `וכאשר` → `ו כאשר`
+
+Plus the language-neutral ones: a missing letter, two spaces, transposed letters,
+words run together.
+
+Two things make Hebrew harder than English, and both are handled explicitly:
+
+**Prefixes attach.** `ו ה ב ל כ מ ש` join the following word with no space, so a
+replacement ending in one has to close up: `אשר` → `ש` must give `שעובדים`, never
+`ש עובדים`. The engine extends the edit to swallow the space, and a test asserts
+no stranded prefix survives at any level or seed.
+
+**Agreement.** A noun swap that changes gender or number breaks the verb and the
+adjective around it — `פתרונות אלה מדגימים` would become `דרכים אלה מדגימים`. Every
+pair in the table matches on both counts, and where no natural match existed the
+entry was dropped rather than fudged. That is why `מהווה` is not in there: replacing
+it needs the subject's gender, which a lookup table cannot know, and `עבודה ... הוא`
+is a worse error than the stiffness it was meant to fix.
+
+Right-to-left `.docx` files are safe by construction: `<w:bidi/>`, `<w:rtl/>` and
+paragraph alignment live in properties the rewriter never touches. In the web UI
+both panes use `unicode-bidi: plaintext`, so each paragraph takes its own direction.
 
 ## What it will not touch
 
@@ -206,10 +261,12 @@ py tests/run_all.py     # no pytest needed
 py -m pytest -q         # or with it
 ```
 
-`test_humanizer.py` covers the engine and the .docx writer, `test_web.py` the
-server and its input validation, `test_webui.py` the page itself — every element id
-the script reaches for has to exist, every checkbox has to name a real setting and
-match its default, and nothing may load from another origin.
+`test_humanizer.py` covers the engine and the .docx writer, `test_hebrew.py` the
+Hebrew rules — prefix attachment, gender and number agreement, script routing and
+RTL documents — `test_web.py` the server and its input validation, and
+`test_webui.py` the page itself: every element id the script reaches for has to
+exist, every checkbox has to name a real setting and match its default, and nothing
+may load from another origin.
 
 ## A note on what this is for
 

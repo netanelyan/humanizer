@@ -49,15 +49,29 @@ const LABELS = {
   'typo:lost_apostrophe': 'dropped apostrophes', 'typo:missing_space': 'run-together words',
   'typo:dropped_comma': 'dropped commas', 'typo:shift_held': 'shift held too long',
   'typo:homophone': 'homophone slips',
+  'typo:he_final_form': 'final letters not final', 'typo:he_key_slip': 'Hebrew keyboard slips',
+  'typo:he_ktiv': 'dropped vav or yod', 'typo:he_alef_he': 'alef/he endings',
+  'typo:he_prefix_split': 'split prefixes',
 };
 
-const SAMPLE = `In today's fast-paced world, it is important to note that organisations \
+/* Two samples, cycled by the Sample button. The Hebrew one is there because
+ * the engine handles both, and it is the quickest way to see that. */
+const SAMPLES = [
+  `In today's fast-paced world, it is important to note that organisations \
 must utilize a wide range of digital tools in order to facilitate collaboration across \
 distributed teams — the long-term benefits are substantial. Furthermore, these solutions \
 demonstrate a comprehensive approach that plays a crucial role in maintaining productivity.
 
 One of the most significant obstacles is the potential for isolation. Therefore, it is \
-essential to foster a culture that prioritizes regular check-ins and well-being.`;
+essential to foster a culture that prioritizes regular check-ins and well-being.`,
+
+  `בעולם המהיר של ימינו, יש לציין כי ארגונים נדרשים לעשות שימוש במגוון רחב של כלים \
+דיגיטליים על מנת לאפשר שיתוף פעולה בין צוותים מרוחקים — היתרונות בטווח הארוך הם משמעותיים. \
+יתרה מכך, פתרונות אלה מדגימים גישה מקיפה אשר ממלאת תפקיד מרכזי בשמירה על הפרודוקטיביות.
+
+לסיכום, ניתן לומר כי מדובר באפשרות טובה עבור ארגונים רבים.`,
+];
+let sampleIndex = 0;
 
 let pending = null;          // in-flight fetch controller
 let timer = null;            // debounce handle
@@ -360,7 +374,8 @@ el.clear.addEventListener('click', () => {
 });
 
 el.sample.addEventListener('click', () => {
-  el.input.value = SAMPLE;
+  el.input.value = SAMPLES[sampleIndex % SAMPLES.length];
+  sampleIndex++;
   schedule(0);
 });
 
