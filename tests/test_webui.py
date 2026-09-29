@@ -69,16 +69,49 @@ def test_checkbox_defaults_match_the_engine():
 
 
 def test_assets_referenced_by_the_page_are_served():
-    for reference in re.findall(r'(?:href|src)="(/[^"]+)"', HTML):
-        path = os.path.join(STATIC_DIR, reference.lstrip("/"))
+    found = 0
+    for reference in re.findall(r'(?:href|src)="([^":]+)"', HTML):
+        if reference.startswith(("#", "data:")):
+            continue
+        found += 1
+        check(not reference.startswith("/"),
+              "%s is an absolute path; it breaks under a GitHub Pages "
+              "project subpath" % reference)
+        path = os.path.join(STATIC_DIR, reference)
         check(os.path.isfile(path), "%s is referenced but not present" % reference)
+    check(found >= 2, "expected the page to reference its css and js")
+
+
+def test_api_calls_are_relative():
+    """Same reason: '/api/...' would miss under /humanizer/ on Pages."""
+    absolute = re.findall(r"fetch\('(/[^']*)'", JS)
+    check(not absolute, "absolute API paths: %s" % absolute)
+    check(re.search(r"fetch\('api/", JS), "expected relative API calls")
+
+
+def test_offline_notice_exists():
+    """A static copy has no engine; the page has to say so rather than fail."""
+    check('id="offline"' in HTML, "no offline notice in the page")
+    check("checkEngine" in JS, "nothing probes for the engine")
+    check("offline-mode" in CSS, "no styling for the disabled state")
 
 
 def test_nothing_is_loaded_from_another_origin():
-    """The CSP the server sends is 'self' only, so an external URL just breaks."""
+    """The CSP the server sends is 'self' only, so an external subresource
+    would simply be blocked. Plain <a href> links are navigation, not a
+    subresource, so they are allowed and are not checked here."""
+    subresources = [
+        (r'src\s*=\s*"([^"]+)"', "script or image"),
+        (r'<link\b[^>]*\bhref\s*=\s*"([^"]+)"', "stylesheet"),
+        (r"url\(\s*['\"]?([^'\")]+)", "css url"),
+        (r"fetch\(\s*['\"]([^'\"]+)", "fetch"),
+    ]
     for name, text in (("index.html", HTML), ("app.css", CSS), ("app.js", JS)):
-        for match in re.finditer(r"""(?:href|src|url)\s*[=(]\s*["']?(https?:)?//[^"')\s]+""", text):
-            check(False, "%s loads from another origin: %s" % (name, match.group(0)))
+        for pattern, what in subresources:
+            for match in re.finditer(pattern, text):
+                target = match.group(1)
+                check(not re.match(r"(https?:)?//", target),
+                      "%s loads a %s from another origin: %s" % (name, what, target))
 
 
 def test_level_captions_cover_the_whole_slider():

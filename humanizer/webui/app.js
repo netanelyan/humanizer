@@ -186,7 +186,7 @@ async function run() {
   setStatus('working');
 
   try {
-    const response = await fetch('/api/humanize', {
+    const response = await fetch('api/humanize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, settings: readSettings() }),
@@ -262,7 +262,7 @@ async function runDocx() {
   el.docxRun.disabled = true;
   setStatus('rewriting document');
   try {
-    const response = await fetch('/api/docx', {
+    const response = await fetch('api/docx', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -415,5 +415,21 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+/* A copy of this page can be served as a static file, from GitHub Pages or
+ * anywhere else. The engine is Python, so there is nothing to talk to in that
+ * case — say so plainly instead of letting every action fail with a toast. */
+async function checkEngine() {
+  try {
+    const response = await fetch('api/defaults', { cache: 'no-store' });
+    if (!response.ok) throw new Error('no engine');
+    await response.json();
+  } catch (error) {
+    $('offline').hidden = false;
+    document.body.classList.add('offline-mode');
+    setStatus('no engine');
+  }
+}
+
 paintSliders();
 el.input.focus();
+checkEngine();

@@ -386,6 +386,35 @@ body.plain .output del { display: none; }
 .docx-change .before { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--removed); }
 .docx-change .after { color: var(--ink); }
 
+/* ------------------------------------------------- no-server notice */
+
+.offline {
+  margin: 0;
+  padding: 0.85rem 1.25rem;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent);
+  color: var(--ink);
+  font-size: 0.87rem;
+  line-height: 1.6;
+}
+.offline strong { color: var(--accent); }
+.offline code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.offline a { color: var(--accent); }
+
+/* with no engine reachable, the controls would only produce errors */
+body.offline-mode .panes,
+body.offline-mode .controls { opacity: 0.55; }
+body.offline-mode button:not(#theme),
+body.offline-mode textarea,
+body.offline-mode input { pointer-events: none; }
+
 /* ---------------------------------------------------------- overlays */
 
 .drop {

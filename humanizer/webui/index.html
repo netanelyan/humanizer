@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>humanizer</title>
-<link rel="stylesheet" href="/app.css">
+<!-- relative, so this folder works both under the Python server at / and at a
+     GitHub Pages project path like /humanizer/ -->
+<link rel="stylesheet" href="app.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>✍</text></svg>">
 </head>
 <body>
@@ -16,6 +18,14 @@
     <button type="button" id="theme" class="ghost" title="Light / dark">◐</button>
   </div>
 </header>
+
+<div id="offline" class="offline" hidden>
+  <strong>No engine behind this page.</strong>
+  The rewriting runs in Python, so the page needs its local server. Install the
+  project and run <code>py -m humanizer.web</code>, or use the command line:
+  <code>py -m humanizer essay.txt -l 7</code>.
+  <a href="https://github.com/netanelyan/humanizer">Source and instructions</a>
+</div>
 
 <main>
   <!-- ------------------------------------------------ controls -->
@@ -126,6 +136,6 @@
 <div id="drop" class="drop" hidden><div>Drop the file</div></div>
 <div id="toast" class="toast" hidden></div>
 
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
