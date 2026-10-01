@@ -1,12 +1,18 @@
 /* humanizer web ui
  *
- * The server owns every rule. This file collects settings, posts the text, and
- * renders what comes back. Highlighting uses the span list the API returns
- * rather than diffing in the browser, so what you see marked is exactly the
- * edit the engine made, with the kind and the original text attached.
+ * Everything runs here. No server, no network, no dependencies: the engine in
+ * ./engine is the same set of rules the Python command line applies, with the
+ * lexicons generated from the Python source and a parity test asserting the two
+ * produce identical output from the same seed.
+ *
+ * Highlighting uses the span list the engine returns rather than diffing two
+ * strings, so every mark is exactly one rule firing, with its kind and the
+ * original text attached.
  */
 
-'use strict';
+import {
+  applyEditsWithSpans, humanizeDocx, Humanizer,
+} from './engine/index.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -54,8 +60,15 @@ const LABELS = {
   'typo:he_prefix_split': 'split prefixes',
 };
 
-/* Two samples, cycled by the Sample button. The Hebrew one is there because
- * the engine handles both, and it is the quickest way to see that. */
+/* The checkboxes carry the engine's Python-side names, which are also what the
+ * documented HTTP API accepts. Two of them differ in the JavaScript engine. */
+const SETTING_KEY = {
+  em_dashes: 'emDashes',
+  protect_first_sentence: 'protectFirstSentence',
+};
+
+/* Two samples, cycled by the Sample button. The Hebrew one is there because the
+ * engine handles both, and it is the quickest way to see that. */
 const SAMPLES = [
   `In today's fast-paced world, it is important to note that organisations \
 must utilize a wide range of digital tools in order to facilitate collaboration across \
@@ -73,8 +86,7 @@ essential to foster a culture that prioritizes regular check-ins and well-being.
 ];
 let sampleIndex = 0;
 
-let pending = null;          // in-flight fetch controller
-let timer = null;            // debounce handle
+let timer = null;
 let lastResult = '';
 let docxFile = null;         // { name, bytes }
 
@@ -88,32 +100,32 @@ function toast(message, tone) {
   toast.handle = setTimeout(() => { el.toast.hidden = true; }, 2600);
 }
 
-function setStatus(text) { el.status.textContent = text; }
+const setStatus = (text) => { el.status.textContent = text; };
 
 function countWords(text) {
-  const found = text.match(/[A-Za-z']+/g);
+  const found = text.match(/[A-Za-z']+|[֐-׿]+/gu);
   return found ? found.length : 0;
 }
 
 /* ------------------------------------------------------------ settings */
 
 function readSettings() {
-  const settings = { level: Number(el.level.value) };
+  const config = { level: Number(el.level.value) };
 
   const typos = Number(el.typos.value);
-  if (typos >= 0) settings.typo_rate = typos;
+  if (typos >= 0) config.typoRate = typos;
 
-  if (el.seed.value !== '') settings.seed = Number(el.seed.value);
+  if (el.seed.value !== '') config.seed = Number(el.seed.value);
 
   document.querySelectorAll('[data-setting]').forEach((box) => {
-    settings[box.dataset.setting] = box.checked;
+    const name = box.dataset.setting;
+    config[SETTING_KEY[name] || name] = box.checked;
   });
 
-  const preserve = el.preserve.value
-    .split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-  if (preserve.length) settings.preserve = preserve;
+  const preserve = el.preserve.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  if (preserve.length) config.preserve = preserve;
 
-  return settings;
+  return config;
 }
 
 function paintSliders() {
@@ -122,25 +134,23 @@ function paintSliders() {
   el.levelCaption.innerHTML = LEVEL_CAPTIONS[level] || '';
 
   const typos = Number(el.typos.value);
-  el.typosValue.textContent = typos < 0 ? 'auto' : (typos === 0 ? 'none' : typos + ' / 1k');
+  el.typosValue.textContent = typos < 0 ? 'auto' : (typos === 0 ? 'none' : `${typos} / 1k`);
 }
 
 /* ------------------------------------------------------------ rendering */
 
-function render(result) {
-  lastResult = result.text;
+function render(text, spans, stats, words) {
+  lastResult = text;
   const fragment = document.createDocumentFragment();
   let cursor = 0;
 
-  for (const span of result.spans) {
-    if (span.start > cursor) {
-      fragment.append(result.text.slice(cursor, span.start));
-    }
+  for (const span of spans) {
+    if (span.start > cursor) fragment.append(text.slice(cursor, span.start));
     if (span.end > span.start) {
       const mark = document.createElement('mark');
       mark.dataset.kind = span.kind;
       mark.title = describe(span);
-      mark.textContent = result.text.slice(span.start, span.end);
+      mark.textContent = text.slice(span.start, span.end);
       fragment.append(mark);
     } else if (span.old) {
       // a deletion: nothing left to highlight, so leave a marker
@@ -150,18 +160,18 @@ function render(result) {
     }
     cursor = Math.max(cursor, span.end);
   }
-  fragment.append(result.text.slice(cursor));
+  fragment.append(text.slice(cursor));
 
   el.output.replaceChildren(fragment);
-  renderStats(result.stats, result.words);
+  renderStats(stats, words);
 }
 
 function describe(span) {
   const label = LABELS[span.kind] || span.kind;
   const old = (span.old || '').trim();
-  if (span.end === span.start) return 'removed “' + old + '”  ·  ' + label;
-  if (old) return 'was “' + old + '”  ·  ' + label;
-  return 'added  ·  ' + label;
+  if (span.end === span.start) return `removed “${old}”  ·  ${label}`;
+  if (old) return `was “${old}”  ·  ${label}`;
+  return `added  ·  ${label}`;
 }
 
 function renderStats(stats, words) {
@@ -169,8 +179,8 @@ function renderStats(stats, words) {
   const total = entries.reduce((sum, [, n]) => sum + n, 0);
 
   el.stats.hidden = total === 0;
-  el.statsTotal.textContent = total + (total === 1 ? ' edit' : ' edits');
-  el.statsWords.textContent = words ? words + ' words in' : '';
+  el.statsTotal.textContent = `${total} ${total === 1 ? 'edit' : 'edits'}`;
+  el.statsWords.textContent = words ? `${words} words in` : '';
 
   el.statsList.replaceChildren(...entries.map(([kind, count]) => {
     const li = document.createElement('li');
@@ -181,11 +191,11 @@ function renderStats(stats, words) {
   }));
 }
 
-/* ------------------------------------------------------------ the request */
+/* ------------------------------------------------------------ the work */
 
-async function run() {
+function run() {
   const text = el.input.value;
-  el.inCount.textContent = countWords(text) + ' words';
+  el.inCount.textContent = `${countWords(text)} words`;
 
   if (!text.trim()) {
     el.output.replaceChildren();
@@ -195,52 +205,25 @@ async function run() {
     return;
   }
 
-  if (pending) pending.abort();
-  pending = new AbortController();
-  setStatus('working');
-
   try {
-    const response = await fetch('api/humanize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, settings: readSettings() }),
-      signal: pending.signal,
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'request failed');
-    render(data);
-    setStatus('level ' + data.settings.level);
+    const humanizer = new Humanizer(readSettings());
+    const edits = humanizer.plan(text);
+    const result = applyEditsWithSpans(text, edits);
+    render(result.text, result.spans, humanizer.stats, countWords(text));
+    setStatus(`level ${Number(el.level.value)}`);
   } catch (error) {
-    if (error.name === 'AbortError') return;
     setStatus('error');
     toast(error.message, 'bad');
-  } finally {
-    pending = null;
+    throw error;
   }
 }
 
-function schedule(delay) {
+function schedule(delay = 200) {
   clearTimeout(timer);
-  timer = setTimeout(run, delay === undefined ? 200 : delay);
+  timer = setTimeout(run, delay);
 }
 
 /* ------------------------------------------------------------ files */
-
-function bytesToBase64(bytes) {
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function base64ToBlob(data, type) {
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type });
-}
 
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -251,13 +234,20 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function outputName(name) {
+  const base = (name || 'document.docx').replace(/^.*[\\/]/, '');
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const extension = dot > 0 ? base.slice(dot) : '.docx';
+  return `${stem}.humanized${/\.docm?$/i.test(extension) ? extension : '.docx'}`;
+}
+
 async function takeFile(file) {
   const name = file.name || 'document';
-  if (/\.docx?$|\.docm$/i.test(name) && !/\.doc$/i.test(name)) {
-    const buffer = new Uint8Array(await file.arrayBuffer());
-    docxFile = { name, bytes: buffer };
+  if (/\.docx$|\.docm$/i.test(name)) {
+    docxFile = { name, bytes: new Uint8Array(await file.arrayBuffer()) };
     el.docxName.textContent = name;
-    el.docxSummary.textContent = (buffer.length / 1024).toFixed(0) + ' KB';
+    el.docxSummary.textContent = `${(docxFile.bytes.length / 1024).toFixed(0)} KB`;
     el.docxChanges.replaceChildren();
     el.docx.hidden = false;
     toast('Document loaded. Set the level, then humanize it.');
@@ -276,30 +266,20 @@ async function runDocx() {
   el.docxRun.disabled = true;
   setStatus('rewriting document');
   try {
-    const response = await fetch('api/docx', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        file: bytesToBase64(docxFile.bytes),
-        name: docxFile.name,
-        settings: readSettings(),
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'request failed');
+    const humanizer = new Humanizer(readSettings());
+    const { file, report } = await humanizeDocx(docxFile.bytes, humanizer);
 
-    saveBlob(base64ToBlob(data.file,
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
-      data.name);
+    saveBlob(new Blob([file], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }), outputName(docxFile.name));
 
     el.docxSummary.textContent =
-      data.rewritten + ' of ' + data.paragraphs + ' paragraphs touched, ' +
-      data.words + ' words';
-    renderStats(data.stats, data.words);
+      `${report.rewritten} of ${report.paragraphs} paragraphs touched, ${report.words} words`;
+    renderStats(report.stats, report.words);
     el.stats.hidden = false;
-    renderDocxChanges(data);
-    setStatus('saved ' + data.name);
-    toast('Saved ' + data.name);
+    renderDocxChanges(report);
+    setStatus('saved');
+    toast(`Saved ${outputName(docxFile.name)}`);
   } catch (error) {
     setStatus('error');
     toast(error.message, 'bad');
@@ -308,8 +288,9 @@ async function runDocx() {
   }
 }
 
-function renderDocxChanges(data) {
-  const nodes = data.changes.map((change) => {
+function renderDocxChanges(report) {
+  const shown = report.changes.slice(0, 60);
+  const nodes = shown.map((change) => {
     const box = document.createElement('div');
     box.className = 'docx-change';
     const before = document.createElement('div');
@@ -321,7 +302,7 @@ function renderDocxChanges(data) {
     box.append(before, after);
     return box;
   });
-  if (data.truncated) {
+  if (report.changes.length > shown.length) {
     const more = document.createElement('p');
     more.className = 'caption';
     more.textContent = 'Showing the first 60 changed paragraphs.';
@@ -332,8 +313,8 @@ function renderDocxChanges(data) {
 
 /* ------------------------------------------------------------ wiring */
 
-el.level.addEventListener('input', () => { paintSliders(); schedule(120); });
-el.typos.addEventListener('input', () => { paintSliders(); schedule(120); });
+el.level.addEventListener('input', () => { paintSliders(); schedule(80); });
+el.typos.addEventListener('input', () => { paintSliders(); schedule(80); });
 el.seed.addEventListener('input', () => schedule(250));
 el.preserve.addEventListener('input', () => schedule(400));
 el.input.addEventListener('input', () => schedule());
@@ -363,8 +344,7 @@ el.copy.addEventListener('click', async () => {
 
 el.download.addEventListener('click', () => {
   if (!lastResult) return;
-  saveBlob(new Blob([lastResult], { type: 'text/plain;charset=utf-8' }),
-    'humanized.txt');
+  saveBlob(new Blob([lastResult], { type: 'text/plain;charset=utf-8' }), 'humanized.txt');
 });
 
 el.clear.addEventListener('click', () => {
@@ -395,7 +375,7 @@ el.theme.addEventListener('click', () => {
   const next = order[(order.indexOf(document.documentElement.dataset.theme) + 1) % 3];
   document.documentElement.dataset.theme = next;
   localStorage.setItem(STORED, next);
-  toast('Theme: ' + next);
+  toast(`Theme: ${next}`);
 });
 
 /* drag and drop anywhere on the page */
@@ -430,21 +410,11 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
-/* A copy of this page can be served as a static file, from GitHub Pages or
- * anywhere else. The engine is Python, so there is nothing to talk to in that
- * case — say so plainly instead of letting every action fail with a toast. */
-async function checkEngine() {
-  try {
-    const response = await fetch('api/defaults', { cache: 'no-store' });
-    if (!response.ok) throw new Error('no engine');
-    await response.json();
-  } catch (error) {
-    $('offline').hidden = false;
-    document.body.classList.add('offline-mode');
-    setStatus('no engine');
-  }
-}
+/* A seed is filled in at the start rather than left empty. Without one, every
+ * keystroke re-rolls every random choice and the whole output churns while you
+ * type; with one, only what you edited changes. Re-roll is how you ask for a
+ * different set of choices at the same level. */
+el.seed.value = Math.floor(Math.random() * 100000);
 
 paintSliders();
 el.input.focus();
-checkEngine();

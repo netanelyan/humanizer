@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from humanizer import lexicon, lexicon_he
 from humanizer.core import Humanizer, Settings, _ends_with_clitic
 from humanizer.docxio import extract_docx_text, humanize_docx, xml_escape
+from humanizer.rng import Rng
 from humanizer.typos import HEBREW_KINDS, TypoEngine, is_hebrew
 from test_humanizer import check
 
@@ -200,7 +201,7 @@ def test_hebrew_typos_never_touch_english_words():
 
 
 def test_final_form_typo_is_the_right_shape():
-    engine = TypoEngine(__import__("random").Random(1))
+    engine = TypoEngine(Rng(1))
     check(engine._mutate("he_final_form", "שלום") == "שלומ")
     check(engine._mutate("he_final_form", "מרוחקים") == "מרוחקימ")
     check(engine._mutate("he_alef_he", "לקרוא") == "לקרוה")
@@ -209,7 +210,7 @@ def test_final_form_typo_is_the_right_shape():
 
 
 def test_ktiv_typo_drops_only_vav_or_yod():
-    engine = TypoEngine(__import__("random").Random(3))
+    engine = TypoEngine(Rng(3))
     for _ in range(40):
         out = engine._mutate("he_ktiv", "דיגיטליים")
         if out is None:

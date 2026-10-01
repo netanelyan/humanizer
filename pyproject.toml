@@ -18,4 +18,4 @@ humanize-web = "humanizer.web:main"
 packages = ["humanizer"]
 
 [tool.setuptools.package-data]
-humanizer = ["webui/*.html", "webui/*.css", "webui/*.js"]
+humanizer = ["webui/*.html", "webui/*.css", "webui/*.js", "webui/engine/*.js"]

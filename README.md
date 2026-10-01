@@ -8,7 +8,8 @@ It handles **English and Hebrew**, and edits `.docx` in place **without touching
 formatting** — styles, bold runs, tables, headers, hyperlinks, images and tracked
 changes all come through unchanged.
 
-No dependencies. Python 3.8+. There is a command line and a local web UI.
+No dependencies, nothing to install. Python 3.8+ for the command line; the web UI
+is a static page that needs no server at all.
 
 ```
 py -m humanizer essay.txt -l 7       # command line
@@ -18,25 +19,49 @@ py -m humanizer.web                  # web UI on localhost:8000
 
 ## Web UI
 
+**The page needs no server.** The engine runs in the browser, so
+`humanizer/webui` is a static site — host it on GitHub Pages or anywhere else and
+it works, offline included. Nothing is uploaded; a `.docx` you drop on it is read,
+rewritten and handed back without leaving your machine.
+
 ```
-py -m humanizer.web            # opens your browser
+py -m humanizer.web            # serve it locally and open a browser
 py -m humanizer --serve 9000   # same thing, another port
 ```
 
+That command exists only to give the page an `http` origin, which ES modules
+require and `file://` cannot provide. It also keeps a small JSON API for driving
+the Python engine over HTTP, which the page does not use.
+
 A slider you can actually drag, with the rewrite updating live as you move it.
 Every change is highlighted in the output — hover one to see what it was and which
-rule changed it — and the tally underneath breaks the edits down by kind.
-
-Drop a `.docx` anywhere on the page and it comes back rewritten with the formatting
+rule changed it — and the tally underneath breaks the edits down by kind. Drop a
+`.docx` anywhere on the page and it comes back rewritten with the formatting
 intact. `.txt` and `.md` load straight into the editor. Arrow keys nudge the level.
-There is a seed box and a re-roll button for when you want a different set of
-choices at the same level.
+A seed is filled in at the start so the output only changes where you edit; the
+re-roll button asks for a different set of choices at the same level.
 
-The server runs the same engine the CLI does — one lexicon, one set of rules,
-nothing reimplemented in JavaScript. It binds to `127.0.0.1`, so it is yours alone
-unless you pass `--host 0.0.0.0`. It is a personal tool on a threaded
-`http.server`: fine on your own machine, but put a real reverse proxy in front of
-it before exposing it to anything.
+### Two engines, kept in step
+
+The rules exist twice, in `humanizer/*.py` and `humanizer/webui/engine/*.js`.
+Two things stop them drifting:
+
+- **The lexicons are generated, not ported.** `tools/build_lexicon.py` emits
+  `engine/lexicon.js` from the Python tables, so the ~950 word and phrase entries
+  have one source. A test fails if the generated file is stale.
+- **A parity test.** `tests/test_parity.py` runs 126 cases — both languages, every
+  level, several seeds, every switch — through both engines and asserts the output,
+  the edit counts and the highlight offsets are identical, then does the same with
+  a real `.docx`. That needs a shared generator, which is why `rng.py` specifies
+  mulberry32 rather than using `random.Random`.
+
+So the hand-ported part is the passes and the typo engine, and it is checked
+against the original on every run. `node` on `PATH` is required for that test; it
+fails loudly rather than skipping if node is missing.
+
+The browser build reads and writes zip with `DecompressionStream` and
+`CompressionStream`, which browsers provide natively, so it stays
+dependency-free — no bundler, no npm, nothing to install.
 
 ## The slider
 
@@ -263,10 +288,11 @@ py -m pytest -q         # or with it
 
 `test_humanizer.py` covers the engine and the .docx writer, `test_hebrew.py` the
 Hebrew rules — prefix attachment, gender and number agreement, script routing and
-RTL documents — `test_web.py` the server and its input validation, and
-`test_webui.py` the page itself: every element id the script reaches for has to
-exist, every checkbox has to name a real setting and match its default, and nothing
-may load from another origin.
+RTL documents — `test_web.py` the server and its input validation, `test_webui.py`
+the page itself (every element id the script reaches for has to exist, every
+checkbox has to name a real setting and match its default, nothing may load from
+another origin or make a network call), and `test_parity.py` that the JavaScript
+engine and the Python one agree exactly.
 
 ## A note on what this is for
 
