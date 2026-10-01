@@ -115,6 +115,46 @@ def test_engine_files_are_present_and_relative():
                   "engine/%s imports %r, which does not exist" % (name, target))
 
 
+def test_the_hidden_attribute_actually_hides():
+    """The UA rule [hidden]{display:none} loses to any author rule that sets
+    display, whatever its specificity. That is how the drop overlay ended up
+    permanently on screen covering the page. Either the reset is present, or no
+    rule may set display on something the markup toggles with hidden."""
+    reset = re.search(r"\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important", CSS)
+    if reset:
+        return
+
+    toggled = set()
+    for tag in re.findall(r"<[^>]*\bhidden\b[^>]*>", HTML):
+        toggled.update(re.findall(r'\bid="([^"]+)"', tag))
+        for value in re.findall(r'\bclass="([^"]+)"', tag):
+            toggled.update(value.split())
+
+    for match in re.finditer(r"([^{}]+)\{([^}]*)\}", CSS):
+        selector, body = match.group(1).strip(), match.group(2)
+        if not re.search(r"(^|[;\s])display\s*:", body):
+            continue
+        for name in re.findall(r"[.#]([A-Za-z0-9_-]+)", selector):
+            check(name not in toggled,
+                  "%r sets display on %r, which the markup hides with the hidden "
+                  "attribute. Add [hidden]{display:none!important} or drop the "
+                  "display declaration." % (selector, name))
+
+
+def test_the_drop_overlay_starts_hidden():
+    match = re.search(r'<div id="drop"[^>]*>', HTML)
+    check(match, "the drop overlay is gone")
+    check("hidden" in match.group(0), "the drop overlay is visible on page load")
+
+
+def test_drag_tracking_cannot_desync():
+    """It was a dragenter/dragleave counter, which drifted and stranded the
+    overlay. Whatever replaces it must have a way out."""
+    check("dragover" in JS, "nothing listens for dragover")
+    check("Escape" in JS, "no key dismisses the drop overlay")
+    check("hideDrop" in JS, "no single place hides the drop overlay")
+
+
 def test_generated_lexicon_is_not_hand_edited():
     path = os.path.join(STATIC_DIR, "engine", "lexicon.js")
     with open(path, encoding="utf-8") as handle:
