@@ -52,6 +52,13 @@ html[data-theme="dark"] {
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute only works through the UA rule [hidden] {display:none},
+ * and any author rule setting display beats it no matter how specific it is —
+ * which is how .drop {display:grid} kept the drop overlay on screen from page
+ * load, covering the whole page. Restate it here, where it wins, so the
+ * attribute means what it says for every element that uses it. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);

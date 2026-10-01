@@ -378,23 +378,53 @@ el.theme.addEventListener('click', () => {
   toast(`Theme: ${next}`);
 });
 
-/* drag and drop anywhere on the page */
-let dragDepth = 0;
-window.addEventListener('dragenter', (event) => {
-  if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes('Files')) return;
-  dragDepth++;
+/* Drag and drop anywhere on the page.
+ *
+ * Driven off dragover rather than counting dragenter against dragleave. The
+ * counting version drifted: dragenter skipped the increment for a drag that was
+ * not files, dragleave decremented anyway, and the overlay could end up stuck
+ * on screen with no way to dismiss it. dragover fires continuously for as long
+ * as a drag is over the window, so a short timer that has not been refreshed
+ * means the drag is gone, and there is no state to get out of step. */
+let dragTimer = null;
+
+const draggingFiles = (event) =>
+  Boolean(event.dataTransfer) && Array.from(event.dataTransfer.types).includes('Files');
+
+function showDrop() {
   el.drop.hidden = false;
-});
-window.addEventListener('dragover', (event) => event.preventDefault());
-window.addEventListener('dragleave', () => {
-  if (--dragDepth <= 0) { dragDepth = 0; el.drop.hidden = true; }
-});
-window.addEventListener('drop', (event) => {
-  event.preventDefault();
-  dragDepth = 0;
+  clearTimeout(dragTimer);
+  // dragover repeats while the drag is over the page; if it stops, it left
+  dragTimer = setTimeout(hideDrop, 400);
+}
+
+function hideDrop() {
+  clearTimeout(dragTimer);
+  dragTimer = null;
   el.drop.hidden = true;
-  const file = event.dataTransfer && event.dataTransfer.files[0];
+}
+
+window.addEventListener('dragover', (event) => {
+  if (!draggingFiles(event)) return;
+  event.preventDefault();            // without this the drop never fires
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  showDrop();
+});
+
+window.addEventListener('drop', (event) => {
+  if (!draggingFiles(event)) return;
+  event.preventDefault();
+  hideDrop();
+  const file = event.dataTransfer.files[0];
   if (file) takeFile(file);
+});
+
+// Belt and braces: if the overlay is ever on screen without a drag, this gets
+// rid of it rather than leaving the page unusable.
+window.addEventListener('dragend', hideDrop);
+window.addEventListener('mousedown', () => { if (!el.drop.hidden) hideDrop(); });
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !el.drop.hidden) hideDrop();
 });
 
 /* keyboard: left/right nudge the level from anywhere outside a field */
