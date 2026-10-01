@@ -82,18 +82,44 @@ def test_assets_referenced_by_the_page_are_served():
     check(found >= 2, "expected the page to reference its css and js")
 
 
-def test_api_calls_are_relative():
-    """Same reason: '/api/...' would miss under /humanizer/ on Pages."""
-    absolute = re.findall(r"fetch\('(/[^']*)'", JS)
-    check(not absolute, "absolute API paths: %s" % absolute)
-    check(re.search(r"fetch\('api/", JS), "expected relative API calls")
+def test_the_page_makes_no_network_calls():
+    """The engine runs in the page. A fetch would mean it had crept back to a
+    server, and the deployed copy has none."""
+    for forbidden in ("fetch(", "XMLHttpRequest", "WebSocket", "EventSource",
+                      "navigator.sendBeacon", "import("):
+        check(forbidden not in JS, "app.js uses %s" % forbidden)
 
 
-def test_offline_notice_exists():
-    """A static copy has no engine; the page has to say so rather than fail."""
-    check('id="offline"' in HTML, "no offline notice in the page")
-    check("checkEngine" in JS, "nothing probes for the engine")
-    check("offline-mode" in CSS, "no styling for the disabled state")
+def test_the_page_loads_the_engine_as_a_module():
+    check('type="module"' in HTML, "app.js must be a module to import the engine")
+    check(re.search(r"from\s+'\./engine/index\.js'", JS),
+          "app.js does not import the engine")
+
+
+def test_engine_files_are_present_and_relative():
+    engine = os.path.join(STATIC_DIR, "engine")
+    expected = {"index.js", "core.js", "edit.js", "typos.js",
+                "lexicon.js", "rng.js", "docx.js"}
+    present = {n for n in os.listdir(engine) if n.endswith(".js")}
+    check(expected <= present, "missing engine modules: %s" % sorted(expected - present))
+
+    for name in sorted(present):
+        with open(os.path.join(engine, name), encoding="utf-8") as handle:
+            source = handle.read()
+        for match in re.finditer(r"""from\s+['"]([^'"]+)['"]""", source):
+            target = match.group(1)
+            check(target.startswith("./") or target.startswith("../"),
+                  "engine/%s imports %r, which is not a relative file" % (name, target))
+            resolved = os.path.join(engine, target)
+            check(os.path.isfile(resolved),
+                  "engine/%s imports %r, which does not exist" % (name, target))
+
+
+def test_generated_lexicon_is_not_hand_edited():
+    path = os.path.join(STATIC_DIR, "engine", "lexicon.js")
+    with open(path, encoding="utf-8") as handle:
+        head = handle.read(200)
+    check("GENERATED FILE" in head, "lexicon.js lost its generated-file notice")
 
 
 def test_nothing_is_loaded_from_another_origin():

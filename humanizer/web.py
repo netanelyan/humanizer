@@ -1,15 +1,18 @@
-"""Local web UI.
+"""Serves the web UI locally, and the JSON API.
 
-Stdlib only, same as the rest of the package. It serves a single page and a
-small JSON API in front of the existing engine, so the browser gets exactly the
-behaviour the CLI has: one lexicon, one set of rules, nothing ported twice.
+The page itself no longer needs this: the engine was ported to JavaScript and
+runs in the browser, so ``humanizer/webui`` is a static site that works from
+GitHub Pages or any file host. What this gives you is a local http origin to
+serve it from, which ES modules require and ``file://`` cannot provide.
+
+The JSON API stays for programmatic use — scripting the Python engine over HTTP
+rather than importing it — and is what ``_settings_from`` below exists to guard.
 
     py -m humanizer.web
 
-Binds to 127.0.0.1 by default. This is a personal tool on a threaded
-``http.server``, not a hardened public service: if you put it on a network,
-put a real reverse proxy in front of it and read ``_settings_from`` first, which
-is the only place client input turns into engine configuration.
+Stdlib only, same as the rest of the package. Binds to 127.0.0.1 by default.
+This is a personal tool on a threaded ``http.server``, not a hardened public
+service: if you put it on a network, put a real reverse proxy in front of it.
 """
 
 from __future__ import annotations

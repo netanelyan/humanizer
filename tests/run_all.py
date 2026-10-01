@@ -7,7 +7,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
-MODULES = ("test_humanizer", "test_hebrew", "test_web", "test_webui")
+MODULES = ("test_humanizer", "test_hebrew", "test_web", "test_webui", "test_parity")
 
 
 def main():

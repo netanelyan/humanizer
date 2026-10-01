@@ -21,12 +21,12 @@ original string.
 
 from __future__ import annotations
 
-import random
 import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import lexicon, lexicon_he
+from .rng import Rng
 from .typos import HEBREW_LETTERS, TypoEngine, is_hebrew
 
 APOSTROPHES = "'’ʼ"
@@ -376,7 +376,9 @@ class Humanizer:
         if settings is not None and overrides:
             for key, value in overrides.items():
                 setattr(self.settings, key, value)
-        self._rng = random.Random(self.settings.seed)
+        # Not random.Random: the browser build has to reproduce this stream
+        # exactly from the same seed. See rng.py.
+        self._rng = Rng(self.settings.seed)
         self._table, self._regex = self._build_table()
         self._typos = TypoEngine(self._rng)
         self._last_opener = ""
