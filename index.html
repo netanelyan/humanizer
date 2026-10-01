@@ -19,14 +19,6 @@
   </div>
 </header>
 
-<div id="offline" class="offline" hidden>
-  <strong>No engine behind this page.</strong>
-  The rewriting runs in Python, so the page needs its local server. Install the
-  project and run <code>py -m humanizer.web</code>, or use the command line:
-  <code>py -m humanizer essay.txt -l 7</code>.
-  <a href="https://github.com/netanelyan/humanizer">Source and instructions</a>
-</div>
-
 <main>
   <!-- ------------------------------------------------ controls -->
   <section class="controls">
@@ -136,6 +128,8 @@
 <div id="drop" class="drop" hidden><div>Drop the file</div></div>
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js"></script>
+<!-- The engine runs here, in the page. Nothing is sent anywhere, and the only
+     reason this needs http rather than file:// is that ES modules do. -->
+<script type="module" src="app.js"></script>
 </body>
 </html>
